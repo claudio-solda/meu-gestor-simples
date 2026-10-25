@@ -28,6 +28,12 @@ h1{font-size:20px;text-align:center;margin:6px 0 2px}
 .cs{display:flex;gap:8px}
 .cs div{flex:1;background:rgba(255,255,255,.16);border-radius:10px;padding:8px 4px;font-size:11px}
 .cs b{display:block;font-size:16px}
+.rs{background:#fff;color:#1d2330;border-radius:12px;padding:16px;border:1px solid #dfe3ea}
+.rt{font-size:20px;font-weight:700}.rm{font-size:12px;color:#667085;margin-top:4px}
+.rh{font-size:12px;color:#667085;text-transform:uppercase;font-weight:700;margin:16px 0 4px;letter-spacing:.5px}
+.rl{display:flex;justify-content:space-between;gap:8px;font-size:13px;margin:8px 0 3px}
+.bk{height:10px;background:#e6e9ef;border-radius:6px;overflow:hidden}.bk i{display:block;height:100%}
+.mrow{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--bd)}
 .tabs{display:flex;gap:6px;margin-bottom:12px}
 .tabs button{flex:1;padding:10px 4px;border:1px solid var(--bd);background:var(--card);color:var(--tx);border-radius:8px;font-size:13px}
 .tabs button.on{background:var(--pri);border-color:var(--pri);color:#fff}
@@ -56,6 +62,7 @@ th{color:var(--mut);font-size:12px}
 .tot b{display:block;font-size:16px}
 .mut{color:var(--mut);font-size:13px}
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 </head>
 <body>
 <div class="w">
@@ -70,9 +77,10 @@ var PST=["Ativo","Pausado","Concluído"];
 var CATS=["Software","Mão de obra","Marketing","Equipamento","Outros"];
 var KEY="gestor-simples-v1";
 var D={projetos:[],tarefas:[],custos:[],seq:1};
-var tab="geral",pid=null,editT=null;
+var tab="geral",pid=null,editT=null,editP=null,lastCat=null,pend={};
 function load(){try{var s=localStorage.getItem(KEY);if(s){D=JSON.parse(s)}}catch(e){}
-if(!D.projetos.length&&!D.tarefas.length){D.projetos=[{id:1,nome:"Implantação de CRM",status:"Ativo",resp:"Claudio",orc:5000}];D.tarefas=[{id:2,pid:1,nome:"Configurar pipeline",desc:"Deixar o funil de vendas pronto para a equipe.",resp:"Claudio",ini:"2026-10-01",fim:"2026-10-15",st:"Em andamento"}];D.custos=[{id:3,pid:1,tipo:"Fixo",cat:"Software",valor:300,data:"2026-10-05",desc:""}];D.seq=4}}
+if(!D.projetos.length&&!D.tarefas.length){D.projetos=[{id:1,nome:"Implantação de CRM",status:"Ativo",resp:"Claudio",orc:5000}];D.tarefas=[{id:2,pid:1,nome:"Configurar pipeline",desc:"Deixar o funil de vendas pronto para a equipe.",resp:"Claudio",ini:"2026-10-01",fim:"2026-10-15",st:"Em andamento"}];D.custos=[{id:3,pid:1,tipo:"Fixo",cat:"Software",valor:300,data:"2026-10-05",desc:""}];D.seq=4}
+if(!D.cats)D.cats=CATS.slice()}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(D))}catch(e){}}
 function $(i){return document.getElementById(i)}
 function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})}
@@ -85,19 +93,47 @@ function render(){
 if(!pid&&D.projetos.length)pid=D.projetos[0].id;
 var ab=D.tarefas.filter(function(t){return t.st!="Concluído"}).length,ct=D.custos.reduce(function(a,c){return a+c.valor},0);
 $("cs").innerHTML='<div><b>'+D.projetos.length+'</b>Projetos</div><div><b>'+ab+'</b>Tarefas abertas</div><div><b>'+money(ct)+'</b>Custo total</div>';
-var T=[["geral","Projetos"],["kanban","Kanban"],["custos","Custos"]];
+var T=[["geral","Projetos"],["kanban","Kanban"],["custos","Custos"],["resumo","Resumo"]];
 $("tabs").innerHTML=T.map(function(t){return '<button class="'+(tab==t[0]?"on":"")+'" onclick="go(\''+t[0]+'\')">'+t[1]+'</button>'}).join("");
-$("v").innerHTML=tab=="geral"?vGeral():tab=="kanban"?vKanban():vCustos();
+$("v").innerHTML=tab=="geral"?vGeral():tab=="kanban"?vKanban():tab=="resumo"?vResumo():vCustos();
 }
 function popts(sel){return D.projetos.map(function(p){return '<option value="'+p.id+'"'+(p.id==sel?" selected":"")+'>'+esc(p.nome)+'</option>'}).join("")}
 function pickP(fn){return '<label>Projeto</label><select onchange="pid=+this.value;render()">'+popts(pid)+'</select>'}
 function vGeral(){
+var e=editP?pj(editP):null;e=e||{};
 var r=D.projetos.map(function(p){var n=D.tarefas.filter(function(t){return t.pid==p.id}).length,c=D.tarefas.filter(function(t){return t.pid==p.id&&t.st=="Concluído"}).length;
-return '<tr><td>'+esc(p.nome)+'</td><td><span class="tag">'+p.status+'</span></td><td>'+esc(p.resp)+'</td><td>'+c+'/'+n+'</td><td>'+money(tot(p.id))+(p.orc?' de '+money(p.orc):'')+'</td><td><button class="btn s" onclick="pid='+p.id+';go(\'kanban\')">Abrir</button> <button class="btn s" onclick="delP('+p.id+')">Excluir</button></td></tr>'}).join("");
+return '<tr><td>'+esc(p.nome)+'</td><td><span class="tag">'+p.status+'</span></td><td>'+esc(p.resp)+'</td><td>'+c+'/'+n+'</td><td>'+money(tot(p.id))+(p.orc?' de '+money(p.orc):'')+'</td><td><button class="btn s" onclick="pid='+p.id+';go(\'kanban\')">Abrir</button> <button class="btn s" onclick="edP('+p.id+')">Editar</button> <button class="btn s" onclick="delP('+p.id+')">Excluir</button></td></tr>'}).join("");
 return '<div class="card"><h3>📁 Visão Geral de Projetos</h3><div class="sc"><table><tr><th>Projeto</th><th>Status</th><th>Responsável</th><th>Tarefas</th><th>Custo</th><th></th></tr>'+(r||'<tr><td colspan="6" class="mut">Nenhum projeto ainda.</td></tr>')+'</table></div></div>'+
-'<div class="card"><h3>➕ Novo projeto</h3><label>Nome</label><input id="pn"><div class="row"><div><label>Responsável</label><input id="pr"></div><div><label>Status</label><select id="ps">'+PST.map(function(s){return '<option>'+s+'</option>'}).join("")+'</select></div></div><label>Orçamento (R$, opcional)</label><input id="po" type="number" step="0.01" inputmode="decimal"><button class="btn" onclick="addP()">Salvar projeto</button></div><div class="card"><h3>🧪 Exemplos</h3><p class="mut">Carrega 2 projetos baseados nos seus apps, com tarefas em todas as colunas e custos, para você ver o app funcionando. Não apaga nada do que você já cadastrou.</p><button class="btn" onclick="loadEx()">Carregar exemplos dos meus apps</button></div>'}
+'<div class="card"><h3>'+(e.id?'✏️ Editar projeto':'➕ Novo projeto')+'</h3><label>Nome</label><input id="pn" value="'+esc(e.nome)+'"><div class="row"><div><label>Responsável</label><input id="pr" value="'+esc(e.resp)+'"></div><div><label>Status</label><select id="ps">'+PST.map(function(s){return '<option'+(s==e.status?' selected':'')+'>'+s+'</option>'}).join("")+'</select></div></div><label>Orçamento (R$, opcional)</label><input id="po" type="number" step="0.01" inputmode="decimal" value="'+(e.orc||"")+'"><button class="btn" onclick="addP()">Salvar projeto</button>'+(e.id?' <button class="btn s" style="margin-top:10px" onclick="editP=null;render()">Cancelar</button>':'')+'</div>'+
+'<div class="card"><h3>💾 Backup</h3><p class="mut">Baixe um arquivo com todos os seus dados para guardar ou levar para outro aparelho.</p><button class="btn" onclick="expB()">Exportar backup</button> <label class="btn" style="display:inline-block;font-size:15px;color:#fff">Importar backup<input type="file" accept=".json,application/json" style="display:none" onchange="impB(this)"></label></div>'+
+'<div class="card"><h3>🧪 Exemplos</h3><p class="mut">Carrega 2 projetos de exemplo para ver o app funcionando. Não apaga o que você já cadastrou.</p><button class="btn" onclick="loadEx()">Carregar exemplos dos meus apps</button></div>'}
+function edP(id){editP=id;render();window.scrollTo(0,document.body.scrollHeight)}
 function addP(){var n=$("pn").value.trim();if(!n){alert("Informe o nome do projeto.");return}
-D.projetos.push({id:D.seq++,nome:n,resp:$("pr").value.trim(),status:$("ps").value,orc:parseFloat($("po").value)||0});pid=D.projetos[D.projetos.length-1].id;save();render()}
+var o={nome:n,resp:$("pr").value.trim(),status:$("ps").value,orc:parseFloat($("po").value)||0};
+if(editP){var p=pj(editP);for(var k in o)p[k]=o[k];editP=null}else{o.id=D.seq++;D.projetos.push(o);pid=o.id}
+save();render()}
+function expB(){var b=new Blob([JSON.stringify(D)],{type:"application/json"});var a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="gestor-backup-"+new Date().toISOString().slice(0,10)+".json";a.click()}
+function impB(inp){var f=inp.files[0];if(!f)return;var r=new FileReader();r.onload=function(){try{var o=JSON.parse(r.result);if(!o.projetos||!o.tarefas||!o.custos)throw 0;if(!confirm("Isso substitui os dados atuais pelos do backup. Continuar?"))return;D=o;if(!D.cats)D.cats=CATS.slice();pid=null;save();render()}catch(e){alert("Arquivo de backup inválido.")}};r.readAsText(f)}
+function bar(p,c){return '<div class="bk"><i style="width:'+Math.min(Math.max(p,0),100)+'%;background:'+c+'"></i></div>'}
+function vResumo(){
+if(!D.projetos.length)return '<div class="card mut">Cadastre um projeto primeiro.</div>';
+var p=pj(pid),tt=tot(pid),orc=p.orc||0,pc=orc?Math.round(tt/orc*100):0,hoje=new Date().toISOString().slice(0,10);
+var TL=D.tarefas.filter(function(t){return t.pid==pid}),n=TL.length,dn=TL.filter(function(t){return t.st=="Concluído"}).length,pg=n?Math.round(dn/n*100):0;
+var bc=pc>=100?"#d64545":pc>=80?"#e0a100":"#1d6fd8";
+var st=COLS.map(function(c){var q=TL.filter(function(t){return t.st==c}).length;return '<div class="rl"><span>'+c+'</span><b>'+q+'</b></div>'+bar(n?q/n*100:0,COLORS[c])}).join("");
+var cs={};D.custos.filter(function(c){return c.pid==pid}).forEach(function(c){cs[c.cat]=(cs[c.cat]||0)+c.valor});
+var ck=Object.keys(cs).sort(function(a,b){return cs[b]-cs[a]});
+var cb=ck.map(function(k){return '<div class="rl"><span>'+esc(k)+'</span><b>'+money(cs[k])+'</b></div>'+bar(tt?cs[k]/tt*100:0,"#1d6fd8")}).join("")||'<div class="rl">Sem custos lançados</div>';
+var al=TL.filter(function(t){return t.st!="Concluído"&&((t.fim&&t.fim<hoje)||t.st=="Bloqueado")}).map(function(t){return '<div class="rl"><span>'+(t.st=="Bloqueado"?"🚫":"⏰")+' '+esc(t.nome)+'</span><span>'+(t.st=="Bloqueado"?"Bloqueada":"Atrasada")+' · '+dt(t.fim)+'</span></div>'}).join("")||'<div class="rl">✅ Nenhum ponto de atenção</div>';
+var orcH=orc?'<div class="rl"><span>Gasto '+money(tt)+' de '+money(orc)+'</span><b style="color:'+bc+'">'+pc+'%</b></div>'+bar(pc,bc)+'<div class="rm">Saldo: '+money(orc-tt)+(pc>=100?' ⚠️ orçamento estourado':pc>=80?' ⚠️ próximo do limite':'')+'</div>':'<div class="rl"><span>Total gasto</span><b>'+money(tt)+'</b></div><div class="rm">Sem orçamento definido</div>';
+return '<div class="card">'+pickP()+'<button class="btn" onclick="shareR()">📤 Compartilhar imagem</button></div>'+
+'<div class="rs" id="rs"><div class="rt">'+esc(p.nome)+'</div><div class="rm">Responsável: '+esc(p.resp||"-")+' · '+p.status+' · Gerado em '+dt(hoje)+'</div>'+
+'<div class="rh">Progresso das tarefas</div><div class="rl"><span>'+dn+' de '+n+' concluídas</span><b>'+pg+'%</b></div>'+bar(pg,"#1f9d55")+
+'<div class="rh">Orçamento</div>'+orcH+'<div class="rm">Fixo: '+money(tot(pid,"Fixo"))+' · Variável: '+money(tot(pid,"Variável"))+'</div>'+
+'<div class="rh">Tarefas por status</div>'+st+'<div class="rh">Custos por categoria</div>'+cb+'<div class="rh">Pontos de atenção</div>'+al+'</div>'}
+function shareR(){var el=$("rs");if(typeof html2canvas=="undefined"){alert("Não foi possível gerar a imagem agora. Tire um print da tela.");return}
+html2canvas(el,{scale:2,backgroundColor:"#ffffff"}).then(function(c){c.toBlob(function(b){var f=new File([b],"resumo-projeto.png",{type:"image/png"});
+if(navigator.canShare&&navigator.canShare({files:[f]})){navigator.share({files:[f],title:"Resumo do projeto"}).catch(function(){})}else{var a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="resumo-projeto.png";a.click()}})})}
 function loadEx(){var a=D.seq++,b=D.seq++;
 D.projetos.push({id:a,nome:"Exemplo: App NIKEN Qualidade",status:"Ativo",resp:"Claudio",orc:2000},{id:b,nome:"Exemplo: Quadro de Operadores",status:"Ativo",resp:"Claudio",orc:800});
 function T(p,n,d,s,i,f){D.tarefas.push({id:D.seq++,pid:p,nome:n,desc:d,resp:"Claudio",ini:i,fim:f,st:s})}
@@ -141,8 +177,11 @@ var p=pj(pid),L=D.custos.filter(function(c){return c.pid==pid}).sort(function(a,
 var tt=tot(pid),sobra=p.orc?p.orc-tt:null;
 return '<div class="card"><h3>💰 Controle de custo</h3>'+pickP()+'<div class="tot" style="margin-top:10px"><div><span class="mut">Fixo</span><b>'+money(tot(pid,"Fixo"))+'</b></div><div><span class="mut">Variável</span><b>'+money(tot(pid,"Variável"))+'</b></div><div><span class="mut">Total</span><b>'+money(tt)+'</b></div>'+(sobra!==null?'<div><span class="mut">Saldo do orçamento</span><b style="color:'+(sobra<0?'var(--bad)':'var(--ok)')+'">'+money(sobra)+'</b></div>':'')+'</div></div>'+
 '<div class="card"><div class="sc"><table><tr><th>Data</th><th>Tipo</th><th>Categoria</th><th>Descrição</th><th>Valor</th><th></th></tr>'+(L.map(function(c){return '<tr><td>'+dt(c.data)+'</td><td>'+c.tipo+'</td><td>'+esc(c.cat)+'</td><td>'+esc(c.desc)+'</td><td><b>'+money(c.valor)+'</b></td><td><button class="btn s" onclick="delC('+c.id+')">✕</button></td></tr>'}).join("")||'<tr><td colspan="6" class="mut">Sem custos.</td></tr>')+'</table></div></div>'+
-'<div class="card"><h3>➕ Novo custo</h3><div class="row"><div><label>Tipo</label><select id="ct"><option>Fixo</option><option>Variável</option></select></div><div><label>Categoria</label><select id="cc">'+CATS.map(function(c){return '<option>'+c+'</option>'}).join("")+'</select></div><div><label>Valor (R$)</label><input id="cv" type="number" step="0.01" inputmode="decimal"></div><div><label>Data</label><input id="cd" type="date" value="'+new Date().toISOString().slice(0,10)+'"></div></div><label>Descrição (opcional)</label><input id="cx"><button class="btn" onclick="addC()">Salvar custo</button></div>'}
-function addC(){var v=parseFloat($("cv").value);if(!(v>0)){alert("Informe um valor.");return}
+'<div class="card"><h3>➕ Novo custo</h3><div class="row"><div><label>Tipo</label><select id="ct"><option>Fixo</option><option'+(pend.ct=="Variável"?" selected":"")+'>Variável</option></select></div><div><label>Categoria</label><select id="cc" onchange="newCat(this)">'+D.cats.map(function(c){return '<option'+(c==lastCat?" selected":"")+'>'+esc(c)+'</option>'}).join("")+'<option value="__new">➕ Nova categoria…</option></select></div><div><label>Valor (R$)</label><input id="cv" type="number" step="0.01" inputmode="decimal" value="'+(pend.cv||"")+'"></div><div><label>Data</label><input id="cd" type="date" value="'+new Date().toISOString().slice(0,10)+'"></div></div><label>Descrição (opcional)</label><input id="cx" value="'+esc(pend.cx)+'"><button class="btn" onclick="addC()">Salvar custo</button></div><div class="card"><h3>🏷️ Categorias de custo</h3>'+D.cats.map(function(c,i){return '<div class="mrow"><span>'+esc(c)+'</span><span><button class="btn s" onclick="renCat('+i+')">Renomear</button> <button class="btn s" onclick="delCat('+i+')">✕</button></span></div>'}).join("")+'</div>'}
+function newCat(s){if(s.value!="__new")return;pend={ct:$("ct").value,cv:$("cv").value,cx:$("cx").value};var n=(prompt("Nome da nova categoria:")||"").trim();if(n&&D.cats.indexOf(n)<0){D.cats.push(n);save()}lastCat=n||D.cats[0];render()}
+function renCat(i){var o=D.cats[i],n=(prompt("Novo nome para a categoria:",o)||"").trim();if(!n||n==o)return;D.cats[i]=n;D.custos.forEach(function(c){if(c.cat==o)c.cat=n});save();render()}
+function delCat(i){if(!confirm("Excluir a categoria? Os custos já lançados mantêm o nome dela."))return;D.cats.splice(i,1);save();render()}
+function addC(){pend={};lastCat=null;var v=parseFloat($("cv").value);if(!(v>0)){alert("Informe um valor.");return}
 D.custos.push({id:D.seq++,pid:pid,tipo:$("ct").value,cat:$("cc").value,valor:v,data:$("cd").value,desc:$("cx").value.trim()});save();render()}
 function delC(id){if(!confirm("Excluir custo?"))return;D.custos=D.custos.filter(function(c){return c.id!=id});save();render()}
 load();render();
